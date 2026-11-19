@@ -9,10 +9,7 @@ from typing import Dict, Optional, Tuple
 
 import httpx
 
-try:
-    from src.groq_llm import ReceptionistBrain
-except ImportError:
-    from groq_llm import ReceptionistBrain
+from src.groq_llm import ReceptionistBrain
 
 # Load environment configuration
 MITHI_SERVICE_URL = os.environ.get("MITHI_SERVICE_URL", "http://127.0.0.1:5002")
@@ -68,10 +65,7 @@ class VoicePipeline:
 
         if self.tts_provider == "edge":
             try:
-                try:
-                    from src.edge_tts_provider import EdgeTTSProvider
-                except ImportError:
-                    from edge_tts_provider import EdgeTTSProvider
+                from src.edge_tts_provider import EdgeTTSProvider
                 self.edge_tts = EdgeTTSProvider()
                 print(
                     f"[VoicePipeline] Edge TTS Provider initialized "
@@ -82,10 +76,7 @@ class VoicePipeline:
 
         if self.tts_provider == "gemini":
             try:
-                try:
-                    from src.gemini_tts import GeminiTTSProvider
-                except ImportError:
-                    from gemini_tts import GeminiTTSProvider
+                from src.gemini_tts import GeminiTTSProvider
                 self.gemini_tts = GeminiTTSProvider()
                 print(f"[VoicePipeline] Gemini TTS Provider initialized ({self.gemini_tts.model_name}).")
             except Exception as e:

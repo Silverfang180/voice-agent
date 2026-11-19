@@ -1,0 +1,55 @@
+# Environment variables and secrets (CRITICAL - NEVER COMMIT)
+.env
+.env.*
+.env.local
+*.env
+!.env.example
+
+# Python virtual environments
+.venv/
+.venv-*/
+venv/
+ENV/
+env/
+
+# Python cache, bytecode, and C extensions
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Model weights, large binaries, and Hugging Face caches
+mithi-tts/model/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+*.metadata
+
+# Audio and transcript runtime outputs
+output/
+mithi-tts/output/
+transcripts/
+transcript_*.txt
+tts_output_*.wav
+reply_*.wav
+*.wav
+!samples/*.wav
+
+# Executables, binaries, and installers
+*.exe
+*.dll
+*.so
+*.dylib
+MicroSIP*
+
+# Logs and scratch
+*.log
+scratch/
+.system_generated/
+
+# IDE and OS metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

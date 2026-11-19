@@ -51,9 +51,12 @@ OUTPUT_SAMPLE_RATE = 24000      # 24 kHz mono matching Edge / Gemini / Mithi TTS
 OUTPUT_CHANNELS = 1
 OUTPUT_FRAME_MS = 20            # 20 ms per output frame (480 samples)
 
-# Half-Duplex & Echo-Guard Configuration (Priority 1)
-ALLOW_BARGE_IN = os.environ.get("ALLOW_BARGE_IN", "false").strip().lower() in ("1", "true", "yes")
-ECHO_GUARD_SECONDS = float(os.environ.get("ECHO_GUARD_SECONDS", "0.45"))
+# Barge-In & Echo-Guard Configuration
+ALLOW_BARGE_IN = os.environ.get("ALLOW_BARGE_IN", "true").strip().lower() in ("1", "true", "yes")
+BARGE_IN_MIN_SPEECH_DURATION = float(os.environ.get("BARGE_IN_MIN_SPEECH_DURATION", "0.35"))
+BARGE_IN_GRACE_PERIOD = float(os.environ.get("BARGE_IN_GRACE_PERIOD", "0.45"))
+BARGE_IN_MIN_PROBABILITY = float(os.environ.get("BARGE_IN_MIN_PROBABILITY", "0.65"))
+ECHO_GUARD_SECONDS = float(os.environ.get("ECHO_GUARD_SECONDS", "0.35"))
 
 # Silero VAD & Endpointing Configuration (Priority 3)
 VAD_MIN_SPEECH_SEC = float(os.environ.get("VAD_MIN_SPEECH_SEC", "0.20"))
@@ -375,21 +378,63 @@ class CallSessionHandler:
             queue_size_ms=2000,
         )
 
-        # Priority 1: Explicit half-duplex playback & echo-guard state
+        # Barge-In, Playback & Echo-Guard State
         self.is_playing_response: bool = False
         self.is_processing: bool = False
+        self._playback_start_mono: float = 0.0
         self._ignore_input_until: float = 0.0
         self._playback_lock = asyncio.Lock()
         self._turn_lock = asyncio.Lock()
         self._closed = False
 
+        # Active async tasks for cancellation during barge-in
+        self._current_playback_task: Optional[asyncio.Task] = None
+        self._current_turn_task: Optional[asyncio.Task] = None
+
+        # Barge-in event flags
+        self._speech_in_progress: bool = False
+        self._speech_started_during_playback: bool = False
+        self._barge_in_triggered: bool = False
+
     def is_listening_suspended(self) -> bool:
-        """True while agent is speaking, processing a turn, or inside the post-playback echo guard."""
-        if self._closed or self.is_playing_response or self.is_processing:
+        """Check whether incoming audio processing is currently suspended.
+        
+        When ALLOW_BARGE_IN is True, we keep listening during playback so the
+        caller can interrupt naturally. We only suspend during the post-playback echo guard.
+        """
+        if self._closed:
+            return True
+        if not ALLOW_BARGE_IN and (self.is_playing_response or self.is_processing):
             return True
         if time.monotonic() < self._ignore_input_until:
             return True
         return False
+
+    def interrupt_playback(self, reason: str = "caller_barge_in"):
+        """Immediately stop agent audio output and flush queued WebRTC frames."""
+        if not self.is_playing_response and not self.is_processing:
+            return
+
+        logger.info("⚡ [Barge-in] Interrupting agent playback immediately (%s).", reason)
+        self._barge_in_triggered = True
+
+        # 1. Immediately clear audio buffer so remote participant hears silence in < 15ms
+        try:
+            self.audio_source.clear_queue()
+        except Exception as e:
+            logger.debug("Error clearing audio queue on interrupt: %s", e)
+
+        # 2. Cancel active playback task if running
+        if self._current_playback_task and not self._current_playback_task.done():
+            self._current_playback_task.cancel()
+
+        # 3. Cancel active turn task if agent was synthesizing/thinking
+        if self._current_turn_task and not self._current_turn_task.done():
+            self._current_turn_task.cancel()
+
+        self.is_playing_response = False
+        self.is_processing = False
+        self._ignore_input_until = 0.0
 
     async def publish_audio_track(self):
         """Publish the receptionist's 24 kHz mono audio track into the LiveKit room."""
@@ -404,7 +449,7 @@ class CallSessionHandler:
         label: str = "response",
         turn_end_mono: Optional[float] = None,
     ) -> float:
-        """Play WAV audio completely in half-duplex mode (no overlapping playback, echo guard after).
+        """Play WAV audio with instant barge-in cancellation and echo protection.
 
         Returns:
             float: decode_resample_seconds
@@ -414,6 +459,9 @@ class CallSessionHandler:
                 return 0.0
 
             self.is_playing_response = True
+            self._playback_start_mono = time.monotonic()
+            self._current_playback_task = asyncio.current_task()
+            self._barge_in_triggered = False
             t_decode = 0.0
             try:
                 pcm24k, duration, t_decode = await asyncio.to_thread(decode_wav_to_pcm24k, wav_bytes)
@@ -423,14 +471,19 @@ class CallSessionHandler:
 
                 first_frame_logged = False
                 logger.info(
-                    "Playback START (%s): duration=%.2fs | decode=%.3fs | half_duplex=ON",
+                    "Playback START (%s): duration=%.2fs | decode=%.3fs | barge_in=%s",
                     label,
                     duration,
                     t_decode,
+                    ALLOW_BARGE_IN,
                 )
 
                 offset = 0
                 while offset < total_len and not self._closed:
+                    if self._barge_in_triggered:
+                        logger.info("Playback loop aborted mid-stream due to barge-in (%s).", label)
+                        break
+
                     chunk = pcm24k[offset : offset + bytes_per_frame]
                     if len(chunk) < bytes_per_frame:
                         chunk = chunk + b"\x00" * (bytes_per_frame - len(chunk))
@@ -451,24 +504,30 @@ class CallSessionHandler:
 
                     offset += bytes_per_frame
 
-                if not self._closed:
+                if not self._closed and not self._barge_in_triggered:
                     await self.audio_source.wait_for_playout()
-                logger.info(
-                    "Playback COMPLETE (%s). Applying %.2fs echo guard before resuming listening.",
-                    label,
-                    ECHO_GUARD_SECONDS,
-                )
+
+                if not self._barge_in_triggered:
+                    logger.info(
+                        "Playback COMPLETE (%s). Applying %.2fs echo guard before resuming listening.",
+                        label,
+                        ECHO_GUARD_SECONDS,
+                    )
             except asyncio.CancelledError:
                 self.audio_source.clear_queue()
-                logger.info("Playback cancelled (%s).", label)
+                self._barge_in_triggered = True
+                logger.info("Playback CANCELLED via task cancellation (%s).", label)
                 raise
             except Exception as e:
                 self.audio_source.clear_queue()
                 logger.error("Audio playback error (%s): %s", label, e)
             finally:
-                # ALWAYS resume listening cleanly after echo guard, even on errors
-                self._ignore_input_until = time.monotonic() + ECHO_GUARD_SECONDS
+                if not self._barge_in_triggered:
+                    self._ignore_input_until = time.monotonic() + ECHO_GUARD_SECONDS
+                else:
+                    self._ignore_input_until = 0.0
                 self.is_playing_response = False
+                self._current_playback_task = None
 
             return t_decode
 
@@ -591,6 +650,8 @@ class CallSessionHandler:
                     t_total_before_play + t_decode,
                     audio_dur,
                 )
+            except asyncio.CancelledError:
+                logger.info("Customer turn task cancelled (barge-in or session end).")
             except Exception as e:
                 logger.error("Unhandled error processing customer turn (recovering listener): %s", e)
             finally:
@@ -613,7 +674,7 @@ class CallSessionHandler:
         speech_start_wall: Optional[float] = None
 
         async def _feed_vad():
-            """Push caller frames to Silero VAD ONLY when listening is active (not playing / echo guard)."""
+            """Push caller frames to Silero VAD (always active during barge-in; paused only during echo guard)."""
             was_suspended = False
             try:
                 async for event in audio_stream:
@@ -622,13 +683,12 @@ class CallSessionHandler:
 
                     if self.is_listening_suspended():
                         if not was_suspended:
-                            # Feed a brief zero-silence frame flush to cleanly close any residual VAD state
                             was_suspended = True
                         continue
 
                     if was_suspended:
                         was_suspended = False
-                        logger.info("Listening RESUMED after playback + echo guard.")
+                        logger.info("Listening RESUMED after echo guard.")
 
                     vad_stream.push_frame(event.frame)
             except asyncio.CancelledError:
@@ -639,7 +699,7 @@ class CallSessionHandler:
                 vad_stream.end_input()
 
         async def _consume_vad():
-            """Handle Silero START_OF_SPEECH and END_OF_SPEECH events cleanly."""
+            """Handle Silero START_OF_SPEECH, INFERENCE_DONE, and END_OF_SPEECH with smart barge-in."""
             nonlocal speech_start_wall
             try:
                 async for ev in vad_stream:
@@ -647,20 +707,46 @@ class CallSessionHandler:
                         break
 
                     if ev.type == lk_vad.VADEventType.START_OF_SPEECH:
-                        if self.is_listening_suspended():
-                            continue
                         speech_start_wall = time.time()
-                        logger.info("VAD: Speech STARTED (ts=%.2f)", speech_start_wall)
+                        self._speech_in_progress = True
+                        self._speech_started_during_playback = self.is_playing_response
+                        logger.info(
+                            "VAD: Speech STARTED (ts=%.2f | during_playback=%s)",
+                            speech_start_wall,
+                            self._speech_started_during_playback,
+                        )
+
+                    elif ev.type == lk_vad.VADEventType.INFERENCE_DONE:
+                        # Monitor for confirmed caller interruption while agent is actively speaking
+                        if ALLOW_BARGE_IN and self.is_playing_response and not self._barge_in_triggered:
+                            playback_elapsed = time.monotonic() - self._playback_start_mono
+                            # Evaluate after initial grace period to prevent initial speaker pop echo
+                            if playback_elapsed >= BARGE_IN_GRACE_PERIOD:
+                                if ev.speaking and ev.raw_accumulated_speech >= BARGE_IN_MIN_SPEECH_DURATION:
+                                    if ev.probability >= BARGE_IN_MIN_PROBABILITY:
+                                        self.interrupt_playback(
+                                            f"sustained speech={ev.raw_accumulated_speech:.2f}s, prob={ev.probability:.2f}"
+                                        )
 
                     elif ev.type == lk_vad.VADEventType.END_OF_SPEECH:
-                        if self.is_listening_suspended():
-                            logger.debug("Discarded VAD END_OF_SPEECH while listening was suspended.")
-                            continue
+                        self._speech_in_progress = False
+                        was_during_playback = self._speech_started_during_playback
+                        self._speech_started_during_playback = False
 
                         speech_end_wall = time.time()
                         pcm_chunks = [bytes(f.data) for f in ev.frames if f.data]
                         captured_pcm = b"".join(pcm_chunks)
                         captured_dur = len(captured_pcm) / (INPUT_SAMPLE_RATE * 2.0)
+
+                        # If speech happened during playback but was too brief to be an intentional interruption:
+                        if was_during_playback and not self._barge_in_triggered:
+                            if ev.speech_duration < BARGE_IN_MIN_SPEECH_DURATION:
+                                logger.debug(
+                                    "Ignored brief transient sound during playback (speech=%.2fs < %.2fs)",
+                                    ev.speech_duration,
+                                    BARGE_IN_MIN_SPEECH_DURATION,
+                                )
+                                continue
 
                         end_reason = (
                             "max_utterance_cap"
@@ -668,20 +754,26 @@ class CallSessionHandler:
                             else "silence_endpoint"
                         )
                         logger.info(
-                            "VAD: Speech ENDED (ts=%.2f | speech=%.2fs | silence=%.2fs | captured=%.2fs | reason=%s)",
-                            speech_end_wall,
+                            "VAD: Speech ENDED (speech=%.2fs | silence=%.2fs | captured=%.2fs | was_barge_in=%s)",
                             ev.speech_duration,
                             ev.silence_duration,
                             captured_dur,
-                            end_reason,
+                            self._barge_in_triggered,
                         )
 
                         if captured_pcm and ev.speech_duration >= VAD_MIN_SPEECH_SEC:
-                            await self.handle_customer_utterance(
-                                pcm16k_bytes=captured_pcm,
-                                speech_duration_s=ev.speech_duration,
-                                silence_duration_s=ev.silence_duration,
-                                end_reason=end_reason,
+                            # Cancel any previous in-flight turn task
+                            if self._current_turn_task and not self._current_turn_task.done():
+                                self._current_turn_task.cancel()
+
+                            # Dispatch turn task asynchronously without blocking VAD event loop!
+                            self._current_turn_task = asyncio.create_task(
+                                self.handle_customer_utterance(
+                                    pcm16k_bytes=captured_pcm,
+                                    speech_duration_s=ev.speech_duration,
+                                    silence_duration_s=ev.silence_duration,
+                                    end_reason=end_reason,
+                                )
                             )
             except asyncio.CancelledError:
                 pass
@@ -705,6 +797,9 @@ class CallSessionHandler:
     async def close(self):
         """Clean up playback queue and conversation memory for this call."""
         self._closed = True
+        self.interrupt_playback("session_closed")
+        if self._current_turn_task and not self._current_turn_task.done():
+            self._current_turn_task.cancel()
         self.audio_source.clear_queue()
         self.pipeline.brain.reset_session(self.session_id)
         logger.info("Call session '%s' closed and memory cleared.", self.session_id)

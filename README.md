@@ -65,6 +65,7 @@ A production-ready multilingual AI phone receptionist built for **ABC Business S
 │   └── business_faq.json       # Structured business profile, hours, services, and contacts
 │
 ├── tests/                      # Automated Verification & Benchmark Suites
+│   ├── test_barge_in.py        # Smart barge-in & interruption mechanics test
 │   ├── test_edge_tts.py        # Edge Neural TTS latency benchmark
 │   ├── test_gemini_tts.py      # Gemini TTS synthesizer verification
 │   ├── test_groq_llm.py        # Groq Qwen 27B reasoning & grounding tests

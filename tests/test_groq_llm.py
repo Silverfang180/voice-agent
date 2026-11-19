@@ -1,5 +1,6 @@
 """Comprehensive test script for Groq LLM AI Receptionist Brain."""
 import argparse
+import os
 import sys
 import time
 
@@ -9,7 +10,13 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-from groq_llm import ReceptionistBrain
+# Add project root to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+try:
+    from src.groq_llm import ReceptionistBrain
+except ImportError:
+    from groq_llm import ReceptionistBrain
 
 
 HINDI_TEST_QUESTIONS = [

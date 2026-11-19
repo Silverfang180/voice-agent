@@ -34,7 +34,10 @@ from livekit import agents, rtc
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, JobProcess, vad as lk_vad
 from livekit.plugins import silero
 
-from voice_pipeline import OUTPUT_DIR, VoicePipeline
+try:
+    from src.voice_pipeline import OUTPUT_DIR, VoicePipeline
+except ImportError:
+    from voice_pipeline import OUTPUT_DIR, VoicePipeline
 
 logger = logging.getLogger("abc-receptionist")
 

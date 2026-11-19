@@ -10,9 +10,15 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-from edge_tts_provider import EdgeTTSProvider
+# Add project root to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-OUTPUT_DIR = os.path.abspath("output")
+try:
+    from src.edge_tts_provider import EdgeTTSProvider
+except ImportError:
+    from edge_tts_provider import EdgeTTSProvider
+
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "output"))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

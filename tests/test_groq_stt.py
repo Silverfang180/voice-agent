@@ -12,13 +12,15 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 def load_env_file():
     """Load environment variables from project's .env file using python-dotenv with fallback."""
     try:
         from dotenv import load_dotenv
-        load_dotenv()
+        load_dotenv(PROJECT_ROOT / ".env")
     except ImportError:
-        env_path = Path(".env")
+        env_path = PROJECT_ROOT / ".env"
         if env_path.is_file():
             try:
                 with open(env_path, "r", encoding="utf-8") as f:
@@ -154,8 +156,9 @@ def main():
     else:
         stem = Path(audio_path).stem
         sanitized_model = args.model.replace("-", "_")
-        os.makedirs("transcripts", exist_ok=True)
-        out_file_path = os.path.join("transcripts", f"transcript_{stem}_{sanitized_model}_{args.language}.txt")
+        transcripts_dir = PROJECT_ROOT / "transcripts"
+        os.makedirs(transcripts_dir, exist_ok=True)
+        out_file_path = transcripts_dir / f"transcript_{stem}_{sanitized_model}_{args.language}.txt"
 
     # Save transcript as UTF-8
     try:

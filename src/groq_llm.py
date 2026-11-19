@@ -23,7 +23,7 @@ DEFAULT_MODEL = "qwen/qwen3.8-27b"
 
 
 class ReceptionistBrain:
-    def __init__(self, model_name: Optional[str] = None, faq_path: str = "business_faq.json"):
+    def __init__(self, model_name: Optional[str] = None, faq_path: Optional[str] = None):
         # Load API key
         self.api_key = os.environ.get("GROQ_API_KEY", "").strip()
         if not self.api_key:
@@ -41,8 +41,23 @@ class ReceptionistBrain:
         except ImportError:
             raise ImportError("The 'groq' package is not installed. Install it with: pip install groq")
 
-        # Load business FAQ
-        self.faq_path = os.path.abspath(faq_path)
+        # Load business FAQ with flexible path lookup
+        if faq_path is None or faq_path == "business_faq.json":
+            candidates = [
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "business_faq.json"),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "business_faq.json"),
+                os.path.join(os.getcwd(), "data", "business_faq.json"),
+                os.path.join(os.getcwd(), "business_faq.json"),
+            ]
+            resolved = None
+            for cand in candidates:
+                if os.path.isfile(cand):
+                    resolved = cand
+                    break
+            self.faq_path = resolved or os.path.abspath(os.path.join("data", "business_faq.json"))
+        else:
+            self.faq_path = os.path.abspath(faq_path)
+
         if not os.path.isfile(self.faq_path):
             raise FileNotFoundError(f"FAQ file not found at '{self.faq_path}'")
         

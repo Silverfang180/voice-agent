@@ -12,7 +12,10 @@ from fastapi.responses import FileResponse, JSONResponse
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from voice_pipeline import OUTPUT_DIR, VoicePipeline
+try:
+    from src.voice_pipeline import OUTPUT_DIR, VoicePipeline
+except ImportError:
+    from voice_pipeline import OUTPUT_DIR, VoicePipeline
 
 app = FastAPI(
     title="Multilingual AI Receptionist Voice Backend",

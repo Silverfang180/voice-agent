@@ -9,11 +9,15 @@ from typing import Dict, Optional, Tuple
 
 import httpx
 
-from groq_llm import ReceptionistBrain
+try:
+    from src.groq_llm import ReceptionistBrain
+except ImportError:
+    from groq_llm import ReceptionistBrain
 
 # Load environment configuration
 MITHI_SERVICE_URL = os.environ.get("MITHI_SERVICE_URL", "http://127.0.0.1:5002")
-OUTPUT_DIR = os.path.abspath(os.environ.get("VOICE_OUTPUT_DIR", "output"))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_DIR = os.path.abspath(os.environ.get("VOICE_OUTPUT_DIR", os.path.join(_PROJECT_ROOT, "output")))
 DEFAULT_TTS_PROVIDER = os.environ.get("TTS_PROVIDER", "edge").strip().lower()
 TTS_ENABLE_FALLBACK = os.environ.get("TTS_ENABLE_FALLBACK", "true").strip().lower() in ("1", "true", "yes")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -64,7 +68,10 @@ class VoicePipeline:
 
         if self.tts_provider == "edge":
             try:
-                from edge_tts_provider import EdgeTTSProvider
+                try:
+                    from src.edge_tts_provider import EdgeTTSProvider
+                except ImportError:
+                    from edge_tts_provider import EdgeTTSProvider
                 self.edge_tts = EdgeTTSProvider()
                 print(
                     f"[VoicePipeline] Edge TTS Provider initialized "
@@ -75,7 +82,10 @@ class VoicePipeline:
 
         if self.tts_provider == "gemini":
             try:
-                from gemini_tts import GeminiTTSProvider
+                try:
+                    from src.gemini_tts import GeminiTTSProvider
+                except ImportError:
+                    from gemini_tts import GeminiTTSProvider
                 self.gemini_tts = GeminiTTSProvider()
                 print(f"[VoicePipeline] Gemini TTS Provider initialized ({self.gemini_tts.model_name}).")
             except Exception as e:

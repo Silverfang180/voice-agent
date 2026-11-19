@@ -49,11 +49,13 @@ def main():
     else:
         out_name = f"tts_output_{args.language}_{args.voice}.wav"
 
-    project_dir = os.path.abspath(os.path.dirname(__file__))
+    project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     model_dir = os.path.join(project_dir, "mithi-tts", "model")
     script_path = os.path.join(project_dir, "mithi-tts", "test_mithi_tts.py")
 
-    container_output = f"/app/voiceagent/{out_name}"
+    output_dir = os.path.join(project_dir, "output")
+    os.makedirs(output_dir, exist_ok=True)
+    container_output = f"/app/voiceagent/output/{out_name}"
 
     docker_cmd = [
         "docker", "run", "--rm",

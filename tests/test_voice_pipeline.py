@@ -10,6 +10,10 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
+# Add project root to sys.path
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
+
 from fastapi.testclient import TestClient
 from main import app
 
@@ -33,7 +37,7 @@ def test_pipeline():
 
         # 2. Hindi Voice Turn
         print("\n--- 2. HINDI VOICE TURN TEST ---")
-        hi_audio_path = os.path.abspath("samples/sample_hi.wav")
+        hi_audio_path = os.path.join(PROJECT_ROOT, "samples", "sample_hi.wav")
         assert os.path.isfile(hi_audio_path), f"Missing {hi_audio_path}"
 
         with open(hi_audio_path, "rb") as f:
@@ -67,7 +71,7 @@ def test_pipeline():
 
         # 3. Marathi Voice Turn
         print("\n--- 3. MARATHI VOICE TURN TEST ---")
-        mr_audio_path = os.path.abspath("samples/sample_mr.wav")
+        mr_audio_path = os.path.join(PROJECT_ROOT, "samples", "sample_mr.wav")
         assert os.path.isfile(mr_audio_path), f"Missing {mr_audio_path}"
 
         with open(mr_audio_path, "rb") as f:

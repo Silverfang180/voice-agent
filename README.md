@@ -51,20 +51,36 @@ A production-ready multilingual AI phone receptionist built for **ABC Business S
 
 ```text
 ├── livekit_phone_agent.py      # Realtime LiveKit SIP agent worker (abc-receptionist)
-├── voice_pipeline.py           # Unified STT -> LLM -> TTS orchestration pipeline
-├── groq_llm.py                 # Grounded AI Receptionist Brain with conversational memory
-├── edge_tts_provider.py        # High-performance Edge Neural TTS provider
-├── gemini_tts.py               # Google Gemini 3.8 Flash-Lite TTS provider
-├── business_faq.json           # Fictional business profile, hours, services, and contacts
 ├── main.py                     # FastAPI REST API backend
 ├── requirements.txt            # Python dependencies
 ├── .env.example                # Template for environment configuration
+│
+├── src/                        # Core AI & Voice Pipeline Modules
+│   ├── voice_pipeline.py       # Unified STT -> LLM -> TTS orchestration pipeline
+│   ├── groq_llm.py             # Grounded AI Receptionist Brain with conversational memory
+│   ├── edge_tts_provider.py    # High-performance Edge Neural TTS provider
+│   └── gemini_tts.py           # Google Gemini 3.8 Flash-Lite TTS provider
+│
+├── data/                       # Business Profiles & Knowledge Bases
+│   └── business_faq.json       # Structured business profile, hours, services, and contacts
+│
+├── tests/                      # Automated Verification & Benchmark Suites
+│   ├── test_edge_tts.py        # Edge Neural TTS latency benchmark
+│   ├── test_gemini_tts.py      # Gemini TTS synthesizer verification
+│   ├── test_groq_llm.py        # Groq Qwen 27B reasoning & grounding tests
+│   ├── test_groq_stt.py        # Groq Whisper STT transcription tests
+│   ├── test_mithi_tts.py       # Mithi Docker container runner
+│   ├── test_voice_pipeline.py  # End-to-end FastAPI turn test
+│   └── test_whisper.py         # Local CPU faster-whisper baseline test
+│
 ├── samples/                    # Audio samples for unit testing (Hindi & Marathi)
-├── mithi-tts/                  # Docker container definition for local Mithi TTS
-│   ├── Dockerfile
-│   ├── server.py
-│   └── requirements.txt
-└── test_*.py                   # Automated test scripts for STT, LLM, TTS & Pipeline
+├── tools/                      # Development & SIP client tools (MicroSIP)
+├── output/                     # Generated voice receptionist reply WAV files
+├── transcripts/                # Saved STT text transcripts
+└── mithi-tts/                  # Docker container definition for local Mithi TTS
+    ├── Dockerfile
+    ├── server.py
+    └── requirements.txt
 ```
 
 ---
@@ -149,16 +165,16 @@ Run test suites individually:
 
 ```powershell
 # Test Groq STT
-python test_groq_stt.py
+python tests/test_groq_stt.py samples/sample_hi.wav --language hi
 
 # Test LLM Reasoning & Grounding
-python test_groq_llm.py
+python tests/test_groq_llm.py
 
 # Test Edge Neural TTS
-python test_edge_tts.py
+python tests/test_edge_tts.py
 
 # Test Full End-to-End Voice Pipeline
-python test_voice_pipeline.py
+python tests/test_voice_pipeline.py
 ```
 
 ---

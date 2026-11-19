@@ -10,9 +10,15 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-from gemini_tts import GeminiTTSProvider
+# Add project root to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-OUTPUT_DIR = os.path.abspath("output")
+try:
+    from src.gemini_tts import GeminiTTSProvider
+except ImportError:
+    from gemini_tts import GeminiTTSProvider
+
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "output"))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

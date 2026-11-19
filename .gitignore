@@ -27,9 +27,11 @@ mithi-tts/model/
 *.metadata
 
 # Audio and transcript runtime outputs
-output/
+output/*
+!output/.gitkeep
+transcripts/*
+!transcripts/.gitkeep
 mithi-tts/output/
-transcripts/
 transcript_*.txt
 tts_output_*.wav
 reply_*.wav
